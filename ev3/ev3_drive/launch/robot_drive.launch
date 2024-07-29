@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Set parameters -->
+    <param name="kp" value="500" />
+    <param name="kd" value="100" />
+    <param name="kp_turn" value="500" />
+
+    <!-- Start the node -->
+    <node pkg="ev3_drive" type="ev3_drive_node.py" name="ev3_drive_node" output="screen" />
+</launch>
