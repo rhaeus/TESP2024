@@ -1,0 +1,8 @@
+<launch>
+    <!-- Set a parameter named 'my_integer_param' with value 42 -->
+    <param name="speed" type="int" value="500" />
+
+    <!-- Launch the node from the package -->
+    <node pkg="ev3_control" type="ev3_control_node" name="ev3_control_node" output="screen" />
+</launch>
+
