@@ -214,7 +214,7 @@ if __name__ == "__main__":
     # print("Optimal Path:", path)
     xy_path = convert_to_meters(A.grid_obs, path, dim_meters)
     print("XY Optimal Path in meters: \n", xy_path)
-    visualize_path(A.grid_obs, path, xy_path)
+    # visualize_path(A.grid_obs, path, xy_path)
 
 
 
