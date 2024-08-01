@@ -395,7 +395,7 @@ if __name__ == '__main__':
         # object_detection.updateyoloEye()
         # object_detection.updateyolo_all()
         # object_detection.pub_yolo_frame_all_aux()
-        [rocks, rover] = object_detection.updateObjectsPose() # 3d detections of the rocks and the rover 
+        rocks, rover = object_detection.updateObjectsPose() # 3d detections of the rocks and the rover 
 
         rocks_msg = Rocks()
         for rock in rocks:
