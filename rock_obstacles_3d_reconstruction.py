@@ -21,7 +21,7 @@ import time
 class RocksDetection(object):
     def __init__(self):
 
-        self.class_dict = {'rock':0,'sand':1}
+        self.class_dict = {'rock':0, 'rover':1}#,'sand':1}
         #camera frames and info
         self.intrinsics = pyrealsense2.intrinsics()
         self.color_frame = []
@@ -33,11 +33,11 @@ class RocksDetection(object):
 
         self.PUB_YOLO_IMG = True
         
-        self.MAX_DETECTIONS = 4
+        #self.MAX_DETECTIONS = 4 
 
-        self.GRIPPER_POSE = [0, 0, 0]
+        # self.GRIPPER_POSE = [0, 0, 0]
 
-        self.table_depth = 0
+        # self.table_depth = 0
 
         # Subscribers
         self.camera_info_sub = rospy.Subscriber(self.cam_prefix+'/color/camera_info', CameraInfo, self.getCameraInfo)
@@ -55,7 +55,7 @@ class RocksDetection(object):
 
 
         #### add robot position publisher
-        
+
 
 
 
@@ -70,7 +70,8 @@ class RocksDetection(object):
         self.tf_pose_ls = tf.TransformListener()
 
         self.rock_positions = []
-        self.sand_positions = []
+        # self.sand_positions = []
+        self.rover_positions = []
         #self.bconnector_postions = []
         #self.lconnector_positions = []
         #self.gripper_postions = []
@@ -93,9 +94,10 @@ class RocksDetection(object):
         bridge = CvBridge()
         try:
             self.color_frame = bridge.imgmsg_to_cv2(msg, "bgr8")
-            print("image received")
+            #print("image received")
         except CvBridgeError as e:
             print(e)
+            print('image not received')
 
     def getEyeColorFrame(self, msg):
         bridge = CvBridge()
@@ -115,12 +117,14 @@ class RocksDetection(object):
 
     # ***************************** yolo object detection *****************************
     def yolo_detection(self, model, frame, class_id = None, cam = "base", conf=0.75):
+        print('entered oylo detection')
         if(class_id is None):
             # limit number of object flag!
             results = model(source=frame, show=self.display_result, conf=conf, show_labels = False, save=False, verbose = False)[0] # yolo function to predict on a frame using the load model
         else:
             results = model(source=frame, show=self.display_result, conf=conf, show_labels = False, save=False, classes = class_id, verbose = False)[0]
         if len(results)!= 0 :
+            print('enrered 1')
             xyxy = results.boxes.xyxy # left top corner (x1,y1) and right bottom corner (x2,y2)
             xyxy = xyxy.cpu().numpy()
             xywh = results.boxes.xywh  # center (x,y) and the width and the height
@@ -130,8 +134,14 @@ class RocksDetection(object):
 
             rects = []
             for i in range(len(xywh)):
-                obj = [[xywh[i][0],xywh[i][1]],[xywh[i][2],xywh[i][3]],[xyxy[i][0],xyxy[i][1]],[xyxy[i][2],xyxy[i][3]], classes[i]] 
+                # complete object
+                #obj = [[xywh[i][0],xywh[i][1]],[xywh[i][2],xywh[i][3]],[xyxy[i][0],xyxy[i][1]],[xyxy[i][2],xyxy[i][3]], classes[i]] 
                 # [center coordinate] , [width and height bounding box], [top left corner coord], [bottom right corner coord], class of the detected obj
+                
+                obj = [[xyxy[i][0],xyxy[i][1]],[xyxy[i][2],xyxy[i][3]]]
+                print('detected rock obj', obj)
+                # [top left point coords], [bottom right point coords]
+                
                 rects.append(obj)
             # if self.PUB_YOLO_IMG:
             #     mask_img = results.plot()
@@ -143,6 +153,7 @@ class RocksDetection(object):
                 #         self.eye_img_pub.publish(self.br.cv2_to_imgmsg(results[i].plot()))
             return rects
         else :
+            print('no results')
             return []
 
     def pub_yolo_frame_all(self, model, frame, conf=0.75):
@@ -172,8 +183,12 @@ class RocksDetection(object):
 
             rects = []
             for i in range(len(xywh)):
-                obj = [[xywh[i][0],xywh[i][1]],[xywh[i][2],xywh[i][3]],[xyxy[i][0],xyxy[i][1]],[xyxy[i][2],xyxy[i][3]], classes[i]] 
+                # obj = [[xywh[i][0],xywh[i][1]],[xywh[i][2],xywh[i][3]],[xyxy[i][0],xyxy[i][1]],[xyxy[i][2],xyxy[i][3]], classes[i]] 
                 # [center coordinate] , [width and height bounding box], [top left corner coord], [bottom right corner coord], classe of the detected obj
+
+                obj = [[xyxy[i][0],xyxy[i][1]],[xyxy[i][2],xyxy[i][3]]]
+                # [top left point coords], [bottom right point coords]
+
                 rects.append(obj)
                 # publisher inspo 
             if self.PUB_YOLO_IMG:
@@ -209,7 +224,8 @@ class RocksDetection(object):
 
     def reset_positions(self):
         self.rock_positions = []
-        self.sand_positions = []
+        self.rover_positions = []
+        # self.sand_positions = []
         #self.bconnector_postions = []
         # self.lconnector_positions = []
         # self.gripper_postions = []
@@ -315,14 +331,16 @@ class RocksDetection(object):
             # self.table_depth = self.getTableDepth(self.depth_frame)
             # store the associated color frame and depth frame used when detecting objetc
             environment_rocks = self.yolo_detection(model=self.model, frame=self.color_frame, class_id=self.class_dict['rock'])
-            environment_sand = self.yolo_detection(model=self.model, frame=self.color_frame, class_id=self.class_dict['sand'])
+            environment_rovers = self.yolo_detection(model=self.model, frame=self.color_frame, class_id=self.class_dict['rover'])
+            #environment_sand = self.yolo_detection(model=self.model, frame=self.color_frame, class_id=self.class_dict['sand'])
 
     def updateyoloEye(self):
         if (len(self.eye_color_frame) > 0):
             # self.table_depth = self.getTableDepth(self.depth_frame)
             # store the associated color frame and depth frame used when detecting objetc
             environment_rocks = self.yolo_detection(model=self.model, frame=self.eye_color_frame, class_id=self.class_dict['rock'], cam="eye")
-            environment_sand = self.yolo_detection(model=self.model, frame=self.eye_color_frame, class_id=self.class_dict['sand'], cam="eye")
+            environment_rovers = self.yolo_detection(model=self.model, frame=self.color_frame, class_id=self.class_dict['rover'])
+            #environment_sand = self.yolo_detection(model=self.model, frame=self.eye_color_frame, class_id=self.class_dict['sand'], cam="eye")
 
     def updateObjectsPose(self):
             self.reset_positions()
@@ -332,22 +350,26 @@ class RocksDetection(object):
                 elapse = time.time() - start
             
             rock_positions = [] #
-            sand_positions = [] #
+            rover_positions = []
+            # sand_positions = [] #
             
             if (len(self.color_frame) > 0) and (len(self.depth_frame) > 0):
-                environment_sand = []
+                print('depth and color frame received')
+                # environment_sand = []
                 # self.table_depth = self.getTableDepth(self.depth_frame)
                 # store the associated color frame and depth frame used when detecting objetc
                 conf = 0.73
                 environment_rocks = self.yolo_detection(model=self.model, frame=self.color_frame, class_id=self.class_dict['rock'], conf=conf)
-                environment_sand = self.yolo_detection(model=self.model, frame=self.color_frame, class_id=self.class_dict['sand'], conf=conf)
+                environment_rovers = self.yolo_detection(model=self.model, frame=self.color_frame, class_id=self.class_dict['rover'], conf=conf)
 
                 self.pub_yolo_frame_all(model=self.model, frame=self.color_frame, conf=conf)
 
                 # self.reset_positions()
                 rock_positions = []
-                sand_positions = []
+                rover_positions = []
+                # sand_positions = []
                 print("environment rocks (2D detections): ", environment_rocks)
+                print("enviroment rovers (2D detections): ", environment_rovers)
 
                 if len(environment_rocks)!=0:
                     # self.rock_positions = []
@@ -358,20 +380,19 @@ class RocksDetection(object):
                     #self.target_msg.data = rock_positions[0]
                     # self.target_pub.publish(self.target_msg)
                     # - - - - - 
-                if len(environment_sand)!=0:
-                    sand_positions = []
-                    for i in range(len(environment_sand)):
-                        sand_pose = self.getPosInWorkspace(self.depth_frame, environment_sand[i], "/leg_"+str(i))
-                        sand_positions.append(sand_pose)
-
+                if len(environment_rovers)!=0:
+                     sand_positions = []
+                     for i in range(len(environment_rovers)):
+                         rover_pose = self.getPosInWorkspace(self.depth_frame, environment_rovers[i], "/leg_"+str(i))
+                         rover_positions.append(rover_pose)
 
                 self.color_frame = []
                 self.depth_frame = []
-                print("sand_positions_yolo_if: ", sand_positions)
-                return [rock_positions, sand_positions]
+                # print("sand_positions_yolo_if: ", sand_positions)
+                # return [rock_positions, sand_positions]
             self.color_frame = []
             self.depth_frame = []
-            return rock_positions
+            return [rock_positions, rover_positions]
             
 if __name__ == '__main__':
 
@@ -384,11 +405,13 @@ if __name__ == '__main__':
         # object_detection.updateyoloEye()
         # object_detection.updateyolo_all()
         # object_detection.pub_yolo_frame_all_aux()
-        rocks = object_detection.updateObjectsPose() # 3d detections of the rocks
-        ordered_rock_list = object_detection.sort_points_3(rocks, object_detection.GRIPPER_POSE)
-        reduced_rock_list = ordered_rock_list
-        print("type rocks", type(rocks))
-        if len(ordered_rock_list) > object_detection.MAX_DETECTIONS:
-            reduced_rock_list = ordered_rock_list[:object_detection.MAX_DETECTIONS]
+        [rocks, rover] = object_detection.updateObjectsPose() # 3d detections of the rocks and the rover 
+        
+        #ordered_rock_list = object_detection.sort_points_3(rocks, object_detection.rover_pose)
+        #reduced_rock_list = ordered_rock_list
+        #print("type rocks", type(rocks))
+        #if len(ordered_rock_list) > object_detection.MAX_DETECTIONS:
+        #    reduced_rock_list = ordered_rock_list[:object_detection.MAX_DETECTIONS]
 
-        print("reduced rock list", reduced_rock_list)
+        # print("reduced rock list", reduced_rock_list)
+
