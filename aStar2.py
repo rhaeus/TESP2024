@@ -5,6 +5,8 @@ from typing import List, Union
 from dataclasses import dataclass
 import time
 
+
+
 @dataclass
 class Node:
     parent: Union["Node", None] = None
@@ -20,7 +22,6 @@ def heuristic(node: Node, goal: NDArray) -> float:
     return hScore
 
 def is_on_zero(node: Node, grid: NDArray) -> bool:
-    # print(node.coord[0], node.coord[1])
     if grid[node.coord[0], node.coord[1]] == 0:
         return True
     return False
@@ -38,7 +39,7 @@ class aStar:
         
         dg = np.linalg.norm(node.coord - node.parent.coord)
         if is_on_zero(node, self.grid_adj):
-            dg += 1.5
+            dg += 1
         return (node.parent.g + dg)
     
     def h_score(self, node):
@@ -116,7 +117,7 @@ class aStar:
     
     def run_one_step(self):
         best_node = self.find_lowest_f()
-        print(f"c: {best_node.coord}, h: {heuristic(best_node, self.goal)}, g: {self.g_score(best_node)}")
+        # print(f"c: {best_node.coord}, h: {heuristic(best_node, self.goal)}, g: {self.g_score(best_node)}")
         if heuristic(best_node, self.goal) < 1:
             self.goal_node = best_node
             return True
@@ -142,7 +143,21 @@ def transform_adjacent_ones_to_zeros(grid):
     # Create a copy of the grid to avoid modifying the original array
     transformed_grid = grid.copy()
     rows, cols = grid.shape
-    
+
+    # Transform edge 1s to 0s
+    for i in range(rows):
+        if grid[i, 0] == 1:  # Left edge
+            transformed_grid[i, 0] = 0
+        if grid[i, cols - 1] == 1:  # Right edge
+            transformed_grid[i, cols - 1] = 0
+
+    for j in range(cols):
+        if grid[0, j] == 1:  # Top edge
+            transformed_grid[0, j] = 0
+        if grid[rows - 1, j] == 1:  # Bottom edge
+            transformed_grid[rows - 1, j] = 0
+
+    # Transform adjacent 1s to 0s
     for i in range(rows):
         for j in range(cols):
             if grid[i, j] == 0:
@@ -151,17 +166,25 @@ def transform_adjacent_ones_to_zeros(grid):
                     for y in range(max(0, j-1), min(cols, j+2)):
                         if grid[x, y] == 1:
                             transformed_grid[x, y] = 0
-                            
+
     return transformed_grid
 
-def visualize_path(grid, path, xy_path):
+def visualize_path(grid, path, xy_path, dim_meters):
     for coord in path:
         grid[coord[0], coord[1]] = 2  # Mark the path with 2
 
     print(grid)
-    plt.imshow(grid, cmap='viridis')
-    plt.show()
-    plt.scatter(xy_path[:, 0], xy_path[:, 1])
+
+    fig, ax1 = plt.subplots()
+    im = ax1.imshow(grid, cmap='viridis')
+
+    # Set custom tick labels for x and y axes
+    ax1.set_xticks(np.linspace(0, grid.shape[1] - 1, 5))  # Customize the number of ticks
+    ax1.set_xticklabels(np.linspace(0, dim_meters[0], 5))
+
+    ax1.set_yticks(np.linspace(0, grid.shape[0] - 1, 5))
+    ax1.set_yticklabels(np.linspace(dim_meters[1], 0, 5))  # Reverse the tick labels to start from 0 at the bottom
+
     plt.show()
 
 def convert_to_meters(grid, path, dim_meters):
@@ -173,50 +196,100 @@ def convert_to_meters(grid, path, dim_meters):
     path = (np.array([1,-1]) * path) + np.array([1, grid.shape[0]])
     path = (path * 2 * np.array([x_node_len, y_node_len])) - np.array([x_node_len, y_node_len])
     return path
+
+def convert_to_cells(grid, obs_pos, dim_meters):
+    x_node_len = (dim_meters[0]/grid.shape[1])/2
+    y_node_len = (dim_meters[1]/grid.shape[0])/2
     
+    i = 0
+    for obs in obs_pos:
+        x1, y1 = obs[0]
+        x2, y2 = obs[1]
 
-if __name__ == "__main__":
-    # start and end positions
-    start_point = [0, 0]
-    end_point = [11, 11]
-    # end_point = np.array([10, 6])
+        x1 = int(np.floor((x1/dim_meters[0])*grid.shape[1]))
+        y1 = int(grid.shape[0] - np.ceil((y1/dim_meters[1])*grid.shape[0]))
 
-    x_meters = 2
-    y_meters = 1
+        x2 = int(np.ceil((x2/dim_meters[0])*grid.shape[1]))
+        y2 = int(grid.shape[0] - np.floor((y2/dim_meters[1])*grid.shape[0]))
 
-    dim_meters = np.array([x_meters, y_meters])
+        print(x1, y1)
+
+        obs_pos[i] = ((y1, x1), (y2, x2))
+        i += 1
+    # print(obs_pos)
+    return obs_pos
+
+def replace_square_with_zeros(grid, obs_nodes):
+    for obs in obs_nodes:
+        row1, col1 = obs[0]
+        row2, col2 = obs[1]
+
+        # Determine the bounds of the square
+        top_row = min(row1, row2)
+        bottom_row = max(row1, row2)
+        left_col = min(col1, col2)
+        right_col = max(col1, col2)
+    
+        # Replace the square with 0's
+        grid[top_row:bottom_row+1, left_col:right_col+1] = 0
+    return grid
+
+def start_end_cells(start_point, end_point, dim_meters, grid):
+    x1 = np.clip(round((start_point[0] / dim_meters[0]) * grid.shape[1]), 0, grid.shape[1] - 1)
+    y1 = np.clip(round(grid.shape[0] - 1 - np.ceil((start_point[1] / dim_meters[1]) * grid.shape[0])), 0, grid.shape[0] - 1)
+    start_cell = np.array([y1, x1])
+
+    x2 = np.clip(round((end_point[0] / dim_meters[0]) * grid.shape[1]), 0, grid.shape[1] - 1)
+    y2 = np.clip(round(grid.shape[0] - 1 - np.ceil((end_point[1] / dim_meters[1]) * grid.shape[0])), 0, grid.shape[0] - 1)
+    end_cell = np.array([y2, x2])
+
+    return start_cell, end_cell
+
+def run(start_point, end_point, x_Max, y_Max, obs_pos):
+    dim_meters = np.array([x_Max, y_Max])
+
+    # convert x_max and y_max to grid size
+    x_Nodes = int(np.floor(x_Max/0.1)) 
+    y_Nodes = int(np.floor(y_Max/0.1))
+    grid_init = np.ones((y_Nodes, x_Nodes))
+
+    start_cell, end_cell = start_end_cells(start_point, end_point, dim_meters, grid_init)
+
+    print(start_cell, end_cell)
 
     A = aStar()
-    A.goal = np.array(end_point)
-    A.initial_node(start_point)
+    A.goal = np.array(end_cell)
+    A.initial_node(start_cell)
 
-    A.grid_obs = np.array([
-        [1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0],
-        [1, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0],
-        [0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1],
-        [1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1],
-        [1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1],
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-    ])
+    obs_nodes = convert_to_cells(grid_init, obs_pos, dim_meters)
+    print(obs_nodes)
 
+    A.grid_obs = replace_square_with_zeros(grid_init, obs_nodes)
     A.grid_adj = transform_adjacent_ones_to_zeros(A.grid_obs)
+
+    print(A.grid_obs)
 
     while not A.run_one_step():
         A.run_one_step()
 
     path = A.get_path()
-    # print("Optimal Path:", path)
     xy_path = convert_to_meters(A.grid_obs, path, dim_meters)
     print("XY Optimal Path in meters: \n", xy_path)
-    # visualize_path(A.grid_obs, path, xy_path)
-
-
-
+    visualize_path(A.grid_obs, path, xy_path, dim_meters)
     
-    
+
+if __name__ == "__main__":
+    # inputs:
+    start_point = [0, 0] # xy meters
+    end_point = [2.0, 1.0] # xy meters
+
+    x_Max = 2.06 # meters
+    y_Max = 1.00 # meters
+
+    obs_pos = [((0.5, 0.4), (0.3, 0.3)),
+                ((1.3, 0.7), (1.5, 0.5)),
+                ((0.6, 1.0), (0.7, 0.7)),
+                ((1.3, 0.25), (1.5, 0.2))]
+
+    #run code using inputs:
+    run(start_point, end_point, x_Max, y_Max, obs_pos)
